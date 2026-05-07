@@ -28,42 +28,42 @@ begin
 end;
 $$;
 
-drop trigger if exists documents_set_updated_at on public.documents;
-create trigger documents_set_updated_at
-before update on public.documents
-for each row
-execute function public.set_updated_at();
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'documents_set_updated_at'
+      and tgrelid = 'public.documents'::regclass
+  ) then
+    create trigger documents_set_updated_at
+    before update on public.documents
+    for each row
+    execute function public.set_updated_at();
+  end if;
+end;
+$$;
 
 alter table public.documents enable row level security;
 
-drop policy if exists "documents_select_authenticated" on public.documents;
-create policy "documents_select_authenticated"
-on public.documents
-for select
-to authenticated
-using (true);
-
-drop policy if exists "documents_insert_authenticated" on public.documents;
-create policy "documents_insert_authenticated"
-on public.documents
-for insert
-to authenticated
-with check (true);
-
-drop policy if exists "documents_update_authenticated" on public.documents;
-create policy "documents_update_authenticated"
-on public.documents
-for update
-to authenticated
-using (true)
-with check (true);
-
-drop policy if exists "documents_delete_authenticated" on public.documents;
-create policy "documents_delete_authenticated"
-on public.documents
-for delete
-to authenticated
-using (true);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'documents'
+      and policyname = 'documents_authenticated_all'
+  ) then
+    create policy "documents_authenticated_all"
+    on public.documents
+    for all
+    to authenticated
+    using (true)
+    with check (true);
+  end if;
+end;
+$$;
 
 -- Store profile and recipe images in one public bucket. The app saves the
 -- public URL in the corresponding document.
@@ -81,43 +81,45 @@ set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-drop policy if exists "app_images_public_read" on storage.objects;
-create policy "app_images_public_read"
-on storage.objects
-for select
-to public
-using (bucket_id = 'app-images');
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'app_images_public_read'
+  ) then
+    create policy "app_images_public_read"
+    on storage.objects
+    for select
+    to public
+    using (bucket_id = 'app-images');
+  end if;
+end;
+$$;
 
-drop policy if exists "app_images_authenticated_insert" on storage.objects;
-create policy "app_images_authenticated_insert"
-on storage.objects
-for insert
-to authenticated
-with check (
-  bucket_id = 'app-images'
-  and (storage.foldername(name))[1] in ('avatars', 'families')
-);
-
-drop policy if exists "app_images_authenticated_update" on storage.objects;
-create policy "app_images_authenticated_update"
-on storage.objects
-for update
-to authenticated
-using (
-  bucket_id = 'app-images'
-  and (storage.foldername(name))[1] in ('avatars', 'families')
-)
-with check (
-  bucket_id = 'app-images'
-  and (storage.foldername(name))[1] in ('avatars', 'families')
-);
-
-drop policy if exists "app_images_authenticated_delete" on storage.objects;
-create policy "app_images_authenticated_delete"
-on storage.objects
-for delete
-to authenticated
-using (
-  bucket_id = 'app-images'
-  and (storage.foldername(name))[1] in ('avatars', 'families')
-);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'app_images_authenticated_all'
+  ) then
+    create policy "app_images_authenticated_all"
+    on storage.objects
+    for all
+    to authenticated
+    using (
+      bucket_id = 'app-images'
+      and (storage.foldername(name))[1] in ('avatars', 'families')
+    )
+    with check (
+      bucket_id = 'app-images'
+      and (storage.foldername(name))[1] in ('avatars', 'families')
+    );
+  end if;
+end;
+$$;
