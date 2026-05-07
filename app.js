@@ -556,8 +556,17 @@ function toggleAuthMode(mode) {
   signInForm.classList.toggle("hidden", mode !== AUTH_MODES.login);
   createFamilyForm.classList.toggle("hidden", mode !== AUTH_MODES.create);
   joinFamilyForm.classList.toggle("hidden", mode !== AUTH_MODES.join);
+  setAuthModeButtonState(authLoginModeBtn, mode === AUTH_MODES.login);
+  setAuthModeButtonState(createFamilyBtn, mode === AUTH_MODES.create);
+  setAuthModeButtonState(joinFamilyBtn, mode === AUTH_MODES.join);
   setupMessage.textContent = "";
   if (mode !== AUTH_MODES.login) authMessage.textContent = "";
+}
+
+function setAuthModeButtonState(button, isActive) {
+  if (!button) return;
+  button.classList.toggle("secondary", !isActive);
+  button.setAttribute("aria-pressed", isActive ? "true" : "false");
 }
 
 function usernameToEmail(rawUsername) {
