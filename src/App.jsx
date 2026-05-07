@@ -729,16 +729,70 @@ export default function App() {
             <p id="profileFormMessage" className="hint" />
           </section>
 
-          <section id="familyView" className="hidden">
-            <p>
-              <strong>Family:</strong> <span id="familyNameLabel" />
-            </p>
-            <p>
-              <strong>PIN:</strong> <span id="familyPinLabel" />
-            </p>
-            <p>
-              <strong>Members:</strong> <span id="familyMembersLabel" />
-            </p>
+          <section id="memberProfileView" className="hidden stack member-profile-view">
+            <div className="member-profile-card">
+              <img id="memberProfileAvatar" className="profile-avatar-img" alt="" />
+              <div>
+                <h3 id="memberProfileName" />
+                <p id="memberProfileUsername" className="hint" />
+              </div>
+            </div>
+            <div className="family-info">
+              <strong>About</strong>
+              <p id="memberProfileBio" className="hint" />
+            </div>
+          </section>
+
+          <section id="familyView" className="hidden stack family-view">
+            <div>
+              <h3 className="family-section-heading">Family members</h3>
+              <div id="familyMemberAvatars" className="family-member-avatars" />
+            </div>
+
+            <section className="family-calendar-card" aria-labelledby="familyCalendarTitle">
+              <div className="family-calendar-header">
+                <button id="familyCalendarPrevBtn" type="button" className="secondary family-calendar-nav">
+                  ‹
+                </button>
+                <div>
+                  <h3 id="familyCalendarTitle">Calendar</h3>
+                  <p id="familyCalendarMonthLabel" className="hint" />
+                </div>
+                <button id="familyCalendarNextBtn" type="button" className="secondary family-calendar-nav">
+                  ›
+                </button>
+              </div>
+              <div id="familyCalendarGrid" className="family-calendar-grid" />
+              <form id="familyCalendarForm" className="stack family-calendar-form">
+                <label htmlFor="familyCalendarDate">Date</label>
+                <input id="familyCalendarDate" name="calendarDate" type="date" required />
+                <label htmlFor="familyCalendarType">Type</label>
+                <select id="familyCalendarType" name="calendarType" defaultValue="note">
+                  <option value="note">Note</option>
+                  <option value="reminder">Reminder</option>
+                </select>
+                <label htmlFor="familyCalendarText">Note or reminder</label>
+                <textarea
+                  id="familyCalendarText"
+                  name="calendarText"
+                  rows={3}
+                  placeholder="Add something for the family..."
+                  required
+                />
+                <button type="submit">Add to calendar</button>
+                <p id="familyCalendarMessage" className="hint" />
+              </form>
+              <div id="familyCalendarList" className="family-calendar-list" />
+            </section>
+
+            <section className="family-info family-details-card">
+              <p>
+                <strong>Family name:</strong> <span id="familyNameLabel" />
+              </p>
+              <p>
+                <strong>PIN:</strong> <span id="familyPinLabel" />
+              </p>
+            </section>
           </section>
         </div>
 

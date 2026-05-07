@@ -1447,6 +1447,185 @@ button.secondary {
   background: var(--card);
 }
 
+.family-view {
+  padding-bottom: 18px;
+}
+
+.family-section-heading,
+.family-calendar-header h3,
+.family-calendar-list h4,
+.member-profile-card h3 {
+  margin: 0;
+}
+
+.family-member-avatars {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.family-avatar-card {
+  min-width: 76px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  padding: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.family-avatar-card span {
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.family-avatar-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #1a1f28;
+  border: 2px solid rgba(3, 183, 229, 0.38);
+}
+
+.family-calendar-card,
+.member-profile-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  padding: 12px;
+}
+
+.family-calendar-header {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.family-calendar-nav {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.family-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.family-calendar-weekday {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.family-calendar-empty-day,
+.family-calendar-day {
+  min-height: 42px;
+  border-radius: 10px;
+}
+
+.family-calendar-day {
+  background: #080a0f;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 5px 4px;
+  display: grid;
+  align-content: space-between;
+  justify-items: center;
+  gap: 2px;
+}
+
+.family-calendar-day.is-today {
+  border-color: rgba(3, 183, 229, 0.75);
+}
+
+.family-calendar-day.is-selected {
+  background: rgba(3, 183, 229, 0.22);
+  border-color: var(--accent);
+}
+
+.family-calendar-day.has-items .family-calendar-day-number {
+  color: #f7c948;
+}
+
+.family-calendar-day-dots {
+  min-height: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.family-calendar-day-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.family-calendar-form {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.family-calendar-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.family-calendar-entry {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #0d1016;
+}
+
+.family-calendar-entry.reminder {
+  border-left-color: #f7c948;
+}
+
+.family-calendar-entry p {
+  margin: 4px 0 0;
+}
+
+.family-calendar-entry-type {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.family-details-card p {
+  margin: 4px 0;
+}
+
+.member-profile-view {
+  padding: 12px 14px 24px;
+}
+
+.member-profile-card {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
 .phone-tabs {
   border-top: 1px solid #20242c;
   background: #07090d;
