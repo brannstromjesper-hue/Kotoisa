@@ -207,13 +207,13 @@ export default function App() {
             <div className="stack">
               <button id="weeklyPlanBtn" type="button" className="image-link-card">
                 <div className="recipe-highlight">
-                  <img src="/images/Ruokalista.jpg" alt="Viikon ruokalista" />
+                  <img src="/images/weekly-menu.svg" alt="Viikon ruokalista" />
                   <div className="recipe-headline">Viikon ruokalista</div>
                 </div>
               </button>
               <button id="mealsRecipesBtn" type="button" className="image-link-card">
                 <div className="recipe-highlight">
-                  <img src="/images/Resepti.jpg" alt="Ateriat ja reseptit" />
+                  <img src="/images/recipes.svg" alt="Ateriat ja reseptit" />
                   <div className="recipe-headline">Ateriat / Reseptit</div>
                 </div>
               </button>
@@ -235,7 +235,7 @@ export default function App() {
             <div className="meals-header-row">
               <img
                 className="meals-header-thumb"
-                src="/images/Ruokalista.jpg"
+                src="/images/weekly-menu.svg"
                 alt="Viikon ruokalista"
               />
               <div>
@@ -329,7 +329,7 @@ export default function App() {
             <div id="mealsHeaderRow" className="meals-header-row">
               <img
                 className="meals-header-thumb"
-                src="/images/Resepti.jpg"
+                src="/images/recipes.svg"
                 alt="Ateriat ja reseptit"
               />
               <div className="recipe-headline meals-header-title">Ateriat / Reseptit</div>
@@ -529,13 +529,13 @@ export default function App() {
             <div className="stack">
               <button id="weeklyChoresBtn" type="button" className="image-link-card">
                 <div className="recipe-highlight">
-                  <img src="/images/askareet.jpg" alt="Viikon askareet" />
+                  <img src="/images/weekly-chores.svg" alt="Viikon askareet" />
                   <div className="recipe-headline">Viikon askareet</div>
                 </div>
               </button>
               <button id="choresListBtn" type="button" className="image-link-card">
                 <div className="recipe-highlight">
-                  <img src="/images/siivous.jpg" alt="Askareet" />
+                  <img src="/images/chores.svg" alt="Askareet" />
                   <div className="recipe-headline">Askareet</div>
                 </div>
               </button>
@@ -553,7 +553,7 @@ export default function App() {
             <div className="meals-header-row">
               <img
                 className="meals-header-thumb"
-                src="/images/askareet.jpg"
+                src="/images/weekly-chores.svg"
                 alt="Viikon askareet"
               />
               <div>
@@ -626,7 +626,7 @@ export default function App() {
               Back
             </button>
             <div id="choresHeaderRow" className="meals-header-row">
-              <img className="meals-header-thumb" src="/images/siivous.jpg" alt="Askareet" />
+              <img className="meals-header-thumb" src="/images/chores.svg" alt="Askareet" />
               <div className="recipe-headline meals-header-title">Askareet</div>
             </div>
             <TableContainer className="data-table">
