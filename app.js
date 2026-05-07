@@ -1,11 +1,11 @@
-import { initializeApp } from "firebase/app";
 import {
   getAuth,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
-} from "firebase/auth";
+  initializeApp,
+} from "./supabase-adapter.js";
 import {
   addDoc,
   arrayUnion,
@@ -14,7 +14,7 @@ import {
   setDoc,
   getDoc,
   getDocs,
-  getFirestore,
+  getDatabase,
   onSnapshot,
   query,
   serverTimestamp,
@@ -22,9 +22,12 @@ import {
   where,
   deleteDoc,
   writeBatch,
-} from "firebase/firestore";
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytes,
+} from "./supabase-adapter.js";
+import { supabaseConfig, isSupabaseConfigured } from "./supabase-config.js";
 
 const appState = {
   currentUserId: null,
@@ -512,18 +515,18 @@ function generatePin() {
 }
 
 async function bootstrap() {
-  if (!isFirebaseConfigured()) {
+  if (!isSupabaseConfigured()) {
     authMessage.textContent =
-      "Firebase config missing. Update firebase-config.js first.";
+      "Supabase config missing. Update supabase-config.js first.";
     render();
     return;
   }
 
   try {
-    const firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp);
-    auth = getAuth(firebaseApp);
-    storage = getStorage(firebaseApp);
+    const supabaseApp = initializeApp(supabaseConfig);
+    db = getDatabase(supabaseApp);
+    auth = getAuth(supabaseApp);
+    storage = getStorage(supabaseApp);
 
     onAuthStateChanged(auth, async (user) => {
       try {
@@ -553,17 +556,17 @@ async function bootstrap() {
         await loadUserProfile();
         render();
       } catch (error) {
-        authMessage.textContent = `Could not start sign-in session (${getFirebaseError(
+        authMessage.textContent = `Could not start sign-in session (${getAppError(
           error
-        )}). Enable Email/Password auth and check authorized domains.`;
+        )}). Enable Supabase Email auth and check your Supabase project settings.`;
         setSignInReady(false);
         console.error(error);
       }
     });
   } catch (error) {
-    authMessage.textContent = `Firebase failed to initialize (${getFirebaseError(
+    authMessage.textContent = `Supabase failed to initialize (${getAppError(
       error
-    )}). Check firebase-config.js values.`;
+    )}). Check supabase-config.js values.`;
     setSignInReady(false);
     console.error(error);
   }
@@ -571,7 +574,7 @@ async function bootstrap() {
   authReadyTimeoutId = window.setTimeout(() => {
     if (!appState.currentUserId) {
       authMessage.textContent =
-        "Still connecting to Firebase. Enable Email/Password auth and add localhost to Authorized domains.";
+        "Still connecting to Supabase. Enable Email auth and check supabase-config.js.";
       setSignInReady(true);
     }
   }, 8000);
@@ -654,7 +657,7 @@ async function handleSignIn(event) {
   event.preventDefault();
   if (!auth || !db) {
     authMessage.textContent =
-      "Sign-in session is not ready. Refresh page and ensure Email/Password auth is enabled in Firebase.";
+      "Sign-in session is not ready. Refresh page and ensure Email auth is enabled in Supabase.";
     setSignInReady(false);
     return;
   }
@@ -678,7 +681,7 @@ async function handleSignIn(event) {
     signInForm.reset();
     render();
   } catch (error) {
-    const code = getFirebaseError(error);
+    const code = getAppError(error);
     if (code === "auth/invalid-credential") {
       authMessage.textContent =
         "Väärä käyttäjänimi tai salasana. Jos tili on luotu vanhalla versiolla, tee uusi käyttäjä kohdasta Join family ja liity perheeseen PIN-koodilla.";
@@ -724,9 +727,9 @@ async function handleCreateFamily(event) {
     createFamilyForm.reset();
     await attachFamilyListeners(familyRef.id);
   } catch (error) {
-    setupMessage.textContent = `Could not create family (${getFirebaseError(
+    setupMessage.textContent = `Could not create family (${getAppError(
       error
-    )}). Check Firestore rules.`;
+    )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
   }
 }
@@ -759,9 +762,9 @@ async function handleJoinFamily(event) {
     joinFamilyForm.reset();
     await attachFamilyListeners(familyDoc.id);
   } catch (error) {
-    setupMessage.textContent = `Could not join family (${getFirebaseError(
+    setupMessage.textContent = `Could not join family (${getAppError(
       error
-    )}). Check Firestore rules.`;
+    )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
   }
 }
@@ -894,7 +897,7 @@ function setEditRecipeFormMessage(message) {
 
 async function uploadRecipeImage(file, familyId, recipeId) {
   if (!storage) {
-    throw new Error("Firebase Storage is not available");
+    throw new Error("Supabase Storage is not available");
   }
   const extension = getImageFileExtension(file);
   const storageRef = ref(
@@ -993,10 +996,10 @@ async function handleAddChore(event) {
     renderChores();
     openChoreSubView("list");
   } catch (error) {
-    setupMessage.textContent = `Could not add chore (${getFirebaseError(
+    setupMessage.textContent = `Could not add chore (${getAppError(
       error
     )}).`;
-    window.alert(`Askareen tallennus epäonnistui: ${getFirebaseError(error)}`);
+    window.alert(`Askareen tallennus epäonnistui: ${getAppError(error)}`);
     console.error(error);
   }
 }
@@ -1079,7 +1082,7 @@ async function handleAddTag(event) {
     });
     addTagInput.value = "";
   } catch (error) {
-    setupMessage.textContent = `Could not add tag (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not add tag (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -1092,7 +1095,7 @@ async function handleDeleteTag(tagId) {
   try {
     await deleteDoc(doc(db, "families", family.id, "tags", tagId));
   } catch (error) {
-    setupMessage.textContent = `Could not delete tag (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not delete tag (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -1320,7 +1323,7 @@ async function handleAddFamilyCalendarItem(event) {
     if (familyCalendarMessage) familyCalendarMessage.textContent = "Added to calendar.";
   } catch (error) {
     if (familyCalendarMessage) {
-      familyCalendarMessage.textContent = `Could not save calendar item (${getFirebaseError(error)}).`;
+      familyCalendarMessage.textContent = `Could not save calendar item (${getAppError(error)}).`;
     }
     console.error(error);
   }
@@ -1508,10 +1511,11 @@ async function handleSaveUserProfile() {
     let avatarUrl = user.avatarUrl || null;
     if (pendingAvatarFile) {
       if (!storage) {
-        profileFormMessage.textContent = "Tallennustila ei ole käytössä (Firebase Storage).";
+        profileFormMessage.textContent = "Tallennustila ei ole käytössä (Supabase Storage).";
         return;
       }
-      const storageRef = ref(storage, `avatars/${uid}/profile`);
+      const avatarExtension = getImageFileExtension(pendingAvatarFile);
+      const storageRef = ref(storage, `avatars/${uid}/profile-${Date.now()}.${avatarExtension}`);
       await uploadBytes(storageRef, pendingAvatarFile, {
         contentType: pendingAvatarFile.type || "image/jpeg",
       });
@@ -1724,7 +1728,7 @@ async function handleRateRecipeFromDetail() {
     };
     openRecipeDetailView(updatedRecipe);
   } catch (error) {
-    setupMessage.textContent = `Could not save rating (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not save rating (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -2804,7 +2808,7 @@ async function addWeeklyMealRow(recipeId) {
     });
     return true;
   } catch (error) {
-    setupMessage.textContent = `Could not add weekly meal (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not add weekly meal (${getAppError(error)}).`;
     console.error(error);
     return false;
   }
@@ -2966,7 +2970,7 @@ async function applyWeeklyChoreAssignees(anchorWeeklyChoreId, selectedUserIds) {
     }
     await batch.commit();
   } catch (error) {
-    setupMessage.textContent = `Could not update assignees (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not update assignees (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -2990,7 +2994,7 @@ async function addWeeklyChoreRow(choreId) {
     });
     return true;
   } catch (error) {
-    lastWeeklyChoreAddError = getFirebaseError(error);
+    lastWeeklyChoreAddError = getAppError(error);
     setupMessage.textContent = `Could not add weekly chore (${lastWeeklyChoreAddError}).`;
     console.error(error);
     return false;
@@ -3010,7 +3014,7 @@ async function updateWeeklyChoreDoneCount(weeklyChoreId, doneCount) {
     if (r) r.doneCount = n;
     renderWeeklyChorePlanTable();
   } catch (error) {
-    setupMessage.textContent = `Could not update Tehty (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not update Tehty (${getAppError(error)}).`;
     console.error(error);
     renderWeeklyChorePlanTable();
   }
@@ -3022,7 +3026,7 @@ async function deleteWeeklyChoreRow(weeklyChoreId) {
   try {
     await deleteDoc(doc(db, "families", family.id, "weeklyChores", weeklyChoreId));
   } catch (error) {
-    setupMessage.textContent = `Could not delete weekly chore (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not delete weekly chore (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3049,7 +3053,7 @@ async function handleClearWeeklyChores() {
       rowsToDelete.map((row) => deleteDoc(doc(db, "families", family.id, "weeklyChores", row.id)))
     );
   } catch (error) {
-    setupMessage.textContent = `Could not clear weekly chores (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not clear weekly chores (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3063,7 +3067,7 @@ async function updateWeeklyMeal(weeklyMealId, patch) {
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    setupMessage.textContent = `Could not update weekly meal (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not update weekly meal (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3074,7 +3078,7 @@ async function deleteWeeklyMeal(weeklyMealId) {
   try {
     await deleteDoc(doc(db, "families", family.id, "weeklyMeals", weeklyMealId));
   } catch (error) {
-    setupMessage.textContent = `Could not delete weekly meal (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not delete weekly meal (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3092,7 +3096,7 @@ async function handleClearWeeklyPlan() {
       )
     );
   } catch (error) {
-    setupMessage.textContent = `Could not clear weekly plan (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not clear weekly plan (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3287,7 +3291,7 @@ async function handleDeleteRecipe(recipeId) {
   try {
     await deleteDoc(doc(db, "families", family.id, "recipes", recipeId));
   } catch (error) {
-    setupMessage.textContent = `Could not delete recipe (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not delete recipe (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3298,7 +3302,7 @@ async function handleDeleteChore(choreId) {
   try {
     await deleteDoc(doc(db, "families", family.id, "chores", choreId));
   } catch (error) {
-    setupMessage.textContent = `Could not delete chore (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not delete chore (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3318,7 +3322,7 @@ async function updateChoreRecurring(choreId, isRecurring) {
     }
     renderChores();
   } catch (error) {
-    setupMessage.textContent = `Could not update askare (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not update askare (${getAppError(error)}).`;
     console.error(error);
     renderChores();
   }
@@ -3344,7 +3348,7 @@ async function handleEditChore(chore) {
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    setupMessage.textContent = `Could not update chore (${getFirebaseError(error)}).`;
+    setupMessage.textContent = `Could not update chore (${getAppError(error)}).`;
     console.error(error);
   }
 }
@@ -3517,27 +3521,28 @@ function clearAuthReadyTimeout() {
   authReadyTimeoutId = null;
 }
 
-function getFirebaseError(error) {
+function getAppError(error) {
   if (!error) return "unknown";
   return error.code || error.message || "unknown";
 }
 
 function getStorageAwareError(error) {
-  const raw = getFirebaseError(error);
-  if (raw === "storage/unauthorized") {
-    return "Firebase Storage rules denied the upload. Check that Storage is enabled and rules allow signed-in users.";
+  const raw = getAppError(error);
+  const lower = raw.toLowerCase();
+  if (lower.includes("unauthorized") || lower.includes("row-level security")) {
+    return "Supabase Storage policies denied the upload. Check the app-images bucket policies.";
   }
-  if (raw === "storage/bucket-not-found") {
-    return "Firebase Storage bucket was not found. Check the storageBucket value in firebase-config.js.";
+  if (lower.includes("bucket not found") || lower.includes("not found")) {
+    return "Supabase Storage bucket was not found. Create the app-images bucket or update supabase-config.js.";
   }
-  if (raw === "storage/quota-exceeded") {
-    return "Firebase Storage quota has been exceeded.";
+  if (lower.includes("quota")) {
+    return "Supabase Storage quota has been exceeded.";
   }
-  if (raw === "storage/canceled") {
-    return "upload was canceled.";
+  if (lower.includes("mime") || lower.includes("content type")) {
+    return "file type is not allowed by the app-images bucket.";
   }
-  if (raw === "storage/unknown") {
-    return "Firebase Storage returned an unknown error. Check Storage setup and browser console.";
+  if (lower.includes("payload") || lower.includes("too large")) {
+    return "image is too large for the app-images bucket.";
   }
   return raw;
 }
