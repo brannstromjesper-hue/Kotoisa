@@ -748,17 +748,18 @@ async function handleAddRecipe(event) {
   }
 
   try {
-    let image = "";
-    if (imageFile instanceof File && imageFile.size > 0) {
-      image = await readFileAsDataUrl(imageFile);
-    }
     const numericRating = Number(rating) || 0;
     const ratingsByUser =
       numericRating > 0 && appState.currentUserId
         ? { [appState.currentUserId]: numericRating }
         : {};
+    const recipeRef = doc(collection(db, "families", family.id, "recipes"));
+    const image =
+      imageFile instanceof File && imageFile.size > 0
+        ? await uploadRecipeImage(imageFile, family.id, recipeRef.id)
+        : "";
 
-    await addDoc(collection(db, "families", family.id, "recipes"), {
+    await setDoc(recipeRef, {
       name,
       rating: numericRating,
       ratingsByUser,
@@ -802,9 +803,9 @@ async function handleEditRecipe(event) {
 
   try {
     const currentRecipe = appState.recipes.find((item) => item.id === activeRecipeId);
-    let image = currentRecipe?.image || "";
+    let image = getRecipeImageSrc(currentRecipe);
     if (imageFile instanceof File && imageFile.size > 0) {
-      image = await readFileAsDataUrl(imageFile);
+      image = await uploadRecipeImage(imageFile, family.id, activeRecipeId);
     }
     const numericRating = Number(rating) || 0;
     const ratingsByUser = { ...getRecipeRatingsMap(currentRecipe) };
@@ -840,13 +841,44 @@ async function handleEditRecipe(event) {
   }
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result || "");
-    reader.onerror = () => reject(new Error("Image file could not be read."));
-    reader.readAsDataURL(file);
+async function uploadRecipeImage(file, familyId, recipeId) {
+  if (!storage) {
+    throw new Error("Firebase Storage is not available");
+  }
+  const extension = getImageFileExtension(file);
+  const storageRef = ref(
+    storage,
+    `families/${familyId}/recipes/${recipeId}/image-${Date.now()}.${extension}`
+  );
+  await uploadBytes(storageRef, file, {
+    contentType: file.type || "image/jpeg",
   });
+  return getDownloadURL(storageRef);
+}
+
+function getImageFileExtension(file) {
+  const extensionByType = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp",
+  };
+  if (extensionByType[file.type]) return extensionByType[file.type];
+  const nameParts = (file.name || "").split(".");
+  const extension = nameParts.length > 1 ? nameParts.pop().toLowerCase() : "";
+  const safeExtension = extension.replace(/[^a-z0-9]/g, "").slice(0, 8);
+  return safeExtension || "jpg";
+}
+
+function getRecipeImageSrc(recipe) {
+  return recipe?.image || recipe?.imageUrl || "";
+}
+
+function getRecipePlaceholderImageSrc(name) {
+  const label = escapeHtml(name || "Recipe");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#11151c"/><stop offset="1" stop-color="#0a5067"/></linearGradient></defs><rect width="640" height="360" fill="url(#bg)"/><circle cx="500" cy="96" r="110" fill="#03b7e5" opacity=".18"/><circle cx="130" cy="306" r="124" fill="#ffffff" opacity=".08"/><rect x="210" y="92" width="220" height="176" rx="28" fill="#ffffff" opacity=".88"/><circle cx="282" cy="152" r="28" fill="#03b7e5"/><path d="M230 244l72-72 46 46 34-34 52 60Z" fill="#0a5067"/><text x="320" y="314" text-anchor="middle" fill="#f3f5f8" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">${label}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 async function handleAddChore(event) {
@@ -1298,7 +1330,14 @@ function openRecipeDetailView(recipe) {
   activeRecipeId = recipe.id;
   openRecipeSubView("detail");
   document.getElementById("recipeDetailName").textContent = recipe.name;
-  document.getElementById("recipeDetailImage").src = recipe.image;
+  const recipeDetailImage = document.getElementById("recipeDetailImage");
+  const fallbackImage = getRecipePlaceholderImageSrc(recipe.name);
+  recipeDetailImage.alt = recipe.name ? `${recipe.name} image` : "Recipe image";
+  recipeDetailImage.onerror = () => {
+    recipeDetailImage.onerror = null;
+    recipeDetailImage.src = fallbackImage;
+  };
+  recipeDetailImage.src = getRecipeImageSrc(recipe) || fallbackImage;
   const avgRating = getRecipeAverageRating(recipe);
   const userRating = getUserRecipeRating(recipe);
   const ratingText = userRating
