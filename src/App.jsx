@@ -39,13 +39,13 @@ export default function App() {
         <h2>Tervetuloa</h2>
         <p className="hint">Valitse kirjautuminen tai perheen perustaminen.</p>
         <div className="setup-actions">
-          <button id="authLoginModeBtn" type="button">
+          <button id="authLoginModeBtn" type="button" aria-pressed="true">
             Log in
           </button>
-          <button id="createFamilyBtn" type="button" className="secondary">
+          <button id="createFamilyBtn" type="button" className="secondary" aria-pressed="false">
             Create family
           </button>
-          <button id="joinFamilyBtn" type="button" className="secondary">
+          <button id="joinFamilyBtn" type="button" className="secondary" aria-pressed="false">
             Join family
           </button>
         </div>
