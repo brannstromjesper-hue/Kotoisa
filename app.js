@@ -35,6 +35,7 @@ const appState = {
   chores: [],
   weeklyChoreRows: [],
   weeklyMeals: [],
+  familyCalendarItems: [],
   members: [],
 };
 
@@ -51,6 +52,7 @@ const unsubs = {
   chores: null,
   weeklyChores: null,
   weeklyMeals: null,
+  familyCalendar: null,
 };
 
 let db = null;
@@ -66,6 +68,8 @@ let activeWeeklyNoteId = null;
 let weeklySelectionMode = false;
 let headerBackAction = null;
 let activeChoreMenu = null;
+let familyCalendarSelectedDate = null;
+let familyCalendarMonthDate = new Date();
 
 const authPanel = document.getElementById("authPanel");
 const appPanel = document.getElementById("appPanel");
@@ -86,7 +90,17 @@ const setupMessage = document.getElementById("setupMessage");
 const authMessage = document.getElementById("authMessage");
 const familyNameLabel = document.getElementById("familyNameLabel");
 const familyPinLabel = document.getElementById("familyPinLabel");
-const familyMembersLabel = document.getElementById("familyMembersLabel");
+const familyMemberAvatars = document.getElementById("familyMemberAvatars");
+const familyCalendarGrid = document.getElementById("familyCalendarGrid");
+const familyCalendarForm = document.getElementById("familyCalendarForm");
+const familyCalendarDate = document.getElementById("familyCalendarDate");
+const familyCalendarType = document.getElementById("familyCalendarType");
+const familyCalendarText = document.getElementById("familyCalendarText");
+const familyCalendarMessage = document.getElementById("familyCalendarMessage");
+const familyCalendarList = document.getElementById("familyCalendarList");
+const familyCalendarMonthLabel = document.getElementById("familyCalendarMonthLabel");
+const familyCalendarPrevBtn = document.getElementById("familyCalendarPrevBtn");
+const familyCalendarNextBtn = document.getElementById("familyCalendarNextBtn");
 const recipeList = document.getElementById("recipeList");
 const weeklyRecipeList = document.getElementById("weeklyRecipeList");
 const weeklyPlanList = document.getElementById("weeklyPlanList");
@@ -201,6 +215,11 @@ const profileBioInput = document.getElementById("profileBioInput");
 const profileBioCount = document.getElementById("profileBioCount");
 const profileSaveBtn = document.getElementById("profileSaveBtn");
 const profileFormMessage = document.getElementById("profileFormMessage");
+const memberProfileView = document.getElementById("memberProfileView");
+const memberProfileAvatar = document.getElementById("memberProfileAvatar");
+const memberProfileName = document.getElementById("memberProfileName");
+const memberProfileUsername = document.getElementById("memberProfileUsername");
+const memberProfileBio = document.getElementById("memberProfileBio");
 
 const tableState = {
   mealsRecipes: {
@@ -224,6 +243,11 @@ const weeklyDays = [
   "Sunnuntai",
 ];
 const mealTypes = ["Lounas", "Päivällinen", "Välipala", "Aamupala"];
+const familyCalendarWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const familyCalendarTypeLabels = {
+  note: "Note",
+  reminder: "Reminder",
+};
 
 signInForm.addEventListener("submit", handleSignIn);
 if (authLoginModeBtn) authLoginModeBtn.addEventListener("click", () => toggleAuthMode(AUTH_MODES.login));
@@ -378,6 +402,22 @@ if (profileBioInput) {
     if (profileBioCount) profileBioCount.textContent = String(profileBioInput.value.length);
   });
 }
+if (familyCalendarForm) familyCalendarForm.addEventListener("submit", handleAddFamilyCalendarItem);
+if (familyCalendarDate) {
+  familyCalendarDate.addEventListener("change", () => {
+    if (!familyCalendarDate.value) return;
+    familyCalendarSelectedDate = familyCalendarDate.value;
+    const parsed = parseDateKey(familyCalendarDate.value);
+    if (parsed) familyCalendarMonthDate = parsed;
+    renderFamilyCalendar();
+  });
+}
+if (familyCalendarPrevBtn) {
+  familyCalendarPrevBtn.addEventListener("click", () => moveFamilyCalendarMonth(-1));
+}
+if (familyCalendarNextBtn) {
+  familyCalendarNextBtn.addEventListener("click", () => moveFamilyCalendarMonth(1));
+}
 toggleAuthMode(AUTH_MODES.login);
 
 document.querySelectorAll(".tab-button").forEach((btn) => {
@@ -495,6 +535,7 @@ async function bootstrap() {
           appState.chores = [];
           appState.weeklyChoreRows = [];
           appState.weeklyMeals = [];
+          appState.familyCalendarItems = [];
           appState.members = [];
           localStorage.removeItem("userId");
           localStorage.removeItem("familyId");
@@ -542,11 +583,9 @@ function render() {
   appPanel.classList.toggle("hidden", !user || !family);
 
   if (user && family) {
-    familyNameLabel.textContent = family.name;
-    familyPinLabel.textContent = family.pin;
-    familyMembersLabel.textContent = appState.members
-      .map((member) => member.name)
-      .join(", ");
+    if (familyNameLabel) familyNameLabel.textContent = family.name || "";
+    if (familyPinLabel) familyPinLabel.textContent = family.pin || "";
+    renderFamilyView();
     renderRecipes();
     renderChores();
   }
@@ -1046,6 +1085,235 @@ async function handleDeleteTag(tagId) {
   }
 }
 
+function renderFamilyView() {
+  if (familyNameLabel) familyNameLabel.textContent = appState.currentFamily?.name || "";
+  if (familyPinLabel) familyPinLabel.textContent = appState.currentFamily?.pin || "";
+  renderFamilyMemberAvatars();
+  renderFamilyCalendar();
+}
+
+function renderFamilyMemberAvatars() {
+  if (!familyMemberAvatars) return;
+  familyMemberAvatars.innerHTML = "";
+  const members = appState.members || [];
+  if (!members.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "No family members yet.";
+    familyMemberAvatars.appendChild(empty);
+    return;
+  }
+
+  members.forEach((member) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "family-avatar-card";
+    button.setAttribute(
+      "aria-label",
+      `Open ${member.name || "family member"} profile`
+    );
+
+    const img = document.createElement("img");
+    img.className = "family-avatar-img";
+    img.alt = "";
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = getProfilePlaceholderAvatarSrc(member.name);
+    };
+    img.src = member.avatarUrl || getProfilePlaceholderAvatarSrc(member.name);
+
+    const name = document.createElement("span");
+    name.textContent = member.name || "Family member";
+
+    button.append(img, name);
+    button.addEventListener("click", () => openMemberProfileView(member.id));
+    familyMemberAvatars.appendChild(button);
+  });
+}
+
+function getDateInputValue(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseDateKey(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return null;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+  return parsed;
+}
+
+function moveFamilyCalendarMonth(delta) {
+  const base = familyCalendarMonthDate || new Date();
+  familyCalendarMonthDate = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+  renderFamilyCalendar();
+}
+
+function getSortedFamilyCalendarItems() {
+  return [...(appState.familyCalendarItems || [])].sort((a, b) => {
+    const byDate = String(a.date || "").localeCompare(String(b.date || ""));
+    if (byDate !== 0) return byDate;
+    return String(a.text || "").localeCompare(String(b.text || ""));
+  });
+}
+
+function renderFamilyCalendar() {
+  if (!familyCalendarGrid || !familyCalendarList) return;
+  if (!familyCalendarSelectedDate) familyCalendarSelectedDate = getDateInputValue(new Date());
+  if (familyCalendarDate && !familyCalendarDate.value) {
+    familyCalendarDate.value = familyCalendarSelectedDate;
+  }
+
+  const selectedDate = parseDateKey(familyCalendarSelectedDate);
+  if (selectedDate) {
+    familyCalendarMonthDate = new Date(
+      familyCalendarMonthDate?.getFullYear?.() ?? selectedDate.getFullYear(),
+      familyCalendarMonthDate?.getMonth?.() ?? selectedDate.getMonth(),
+      1
+    );
+  }
+
+  const monthDate = familyCalendarMonthDate || new Date();
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  if (familyCalendarMonthLabel) {
+    familyCalendarMonthLabel.textContent = monthDate.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  const items = getSortedFamilyCalendarItems();
+  const itemsByDate = items.reduce((map, item) => {
+    const key = item.date;
+    if (!key) return map;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+    return map;
+  }, new Map());
+
+  familyCalendarGrid.innerHTML = "";
+  familyCalendarWeekdays.forEach((day) => {
+    const label = document.createElement("div");
+    label.className = "family-calendar-weekday";
+    label.textContent = day;
+    familyCalendarGrid.appendChild(label);
+  });
+
+  const firstDay = new Date(year, month, 1);
+  const leadingBlankDays = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let i = 0; i < leadingBlankDays; i += 1) {
+    const blank = document.createElement("div");
+    blank.className = "family-calendar-empty-day";
+    familyCalendarGrid.appendChild(blank);
+  }
+
+  const todayKey = getDateInputValue(new Date());
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = getDateInputValue(new Date(year, month, day));
+    const dayItems = itemsByDate.get(key) || [];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "family-calendar-day";
+    button.classList.toggle("is-today", key === todayKey);
+    button.classList.toggle("is-selected", key === familyCalendarSelectedDate);
+    button.classList.toggle("has-items", dayItems.length > 0);
+    button.innerHTML = `
+      <span class="family-calendar-day-number">${day}</span>
+      <span class="family-calendar-day-dots" aria-label="${dayItems.length} entries">
+        ${dayItems.slice(0, 3).map(() => "<span></span>").join("")}
+      </span>
+    `;
+    button.addEventListener("click", () => {
+      familyCalendarSelectedDate = key;
+      if (familyCalendarDate) familyCalendarDate.value = key;
+      renderFamilyCalendar();
+    });
+    familyCalendarGrid.appendChild(button);
+  }
+
+  renderFamilyCalendarList(itemsByDate.get(familyCalendarSelectedDate) || []);
+}
+
+function renderFamilyCalendarList(itemsForDate) {
+  if (!familyCalendarList) return;
+  const selected = parseDateKey(familyCalendarSelectedDate) || new Date();
+  const heading = selected.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+
+  familyCalendarList.innerHTML = "";
+  const title = document.createElement("h4");
+  title.textContent = heading;
+  familyCalendarList.appendChild(title);
+
+  if (!itemsForDate.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "No notes or reminders for this date.";
+    familyCalendarList.appendChild(empty);
+    return;
+  }
+
+  itemsForDate.forEach((item) => {
+    const entry = document.createElement("div");
+    entry.className = `family-calendar-entry ${item.type === "reminder" ? "reminder" : "note"}`;
+    const type = document.createElement("span");
+    type.className = "family-calendar-entry-type";
+    type.textContent = familyCalendarTypeLabels[item.type] || "Note";
+    const text = document.createElement("p");
+    text.textContent = item.text || "";
+    entry.append(type, text);
+    familyCalendarList.appendChild(entry);
+  });
+}
+
+async function handleAddFamilyCalendarItem(event) {
+  event.preventDefault();
+  const family = appState.currentFamily;
+  if (!family || !db) return;
+
+  const date = familyCalendarDate?.value || "";
+  const type = familyCalendarType?.value === "reminder" ? "reminder" : "note";
+  const text = (familyCalendarText?.value || "").trim();
+  if (!parseDateKey(date) || !text) {
+    if (familyCalendarMessage) familyCalendarMessage.textContent = "Choose a date and add text.";
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, "families", family.id, "familyCalendar"), {
+      date,
+      type,
+      text,
+      createdBy: appState.currentUserId || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    familyCalendarSelectedDate = date;
+    familyCalendarMonthDate = parseDateKey(date) || familyCalendarMonthDate;
+    if (familyCalendarText) familyCalendarText.value = "";
+    if (familyCalendarMessage) familyCalendarMessage.textContent = "Added to calendar.";
+  } catch (error) {
+    if (familyCalendarMessage) {
+      familyCalendarMessage.textContent = `Could not save calendar item (${getFirebaseError(error)}).`;
+    }
+    console.error(error);
+  }
+}
+
 function renderChores() {
   renderChoreTable(choreList, tableState.listChores);
   renderWeeklyChorePlanTable();
@@ -1053,6 +1321,7 @@ function renderChores() {
 
 function hideUserProfileView() {
   if (userProfileView) userProfileView.classList.add("hidden");
+  if (memberProfileView) memberProfileView.classList.add("hidden");
 }
 
 function getProfilePlaceholderLetter(name) {
@@ -1136,6 +1405,54 @@ function closeUserProfileView() {
   openTab(lastTabBeforeProfile || "recipes");
 }
 
+function hideMainContentViews() {
+  [
+    "recipesView",
+    "weeklyPlanView",
+    "mealsRecipesView",
+    "addRecipeView",
+    "recipeDetailView",
+    "tagsView",
+    "shoppingView",
+    "choresView",
+    "weeklyChoresView",
+    "choresListView",
+    "addChoreView",
+    "familyView",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  });
+}
+
+function openMemberProfileView(memberId) {
+  const member = (appState.members || []).find((item) => item.id === memberId);
+  if (!member || !memberProfileView) return;
+  hideMainContentViews();
+  if (userProfileView) userProfileView.classList.add("hidden");
+  memberProfileView.classList.remove("hidden");
+  if (memberProfileAvatar) {
+    memberProfileAvatar.alt = member.name ? `${member.name} avatar` : "Family member avatar";
+    memberProfileAvatar.onerror = () => {
+      memberProfileAvatar.onerror = null;
+      memberProfileAvatar.src = getProfilePlaceholderAvatarSrc(member.name);
+    };
+    memberProfileAvatar.src = member.avatarUrl || getProfilePlaceholderAvatarSrc(member.name);
+  }
+  if (memberProfileName) memberProfileName.textContent = member.name || "Family member";
+  if (memberProfileUsername) {
+    memberProfileUsername.textContent = member.username ? `@${member.username}` : "Family member";
+  }
+  if (memberProfileBio) {
+    memberProfileBio.textContent = member.bio || "No profile details added yet.";
+  }
+  if (pageTitle) pageTitle.textContent = member.name || "Profile";
+  setHeaderBackAction(() => openTab("family"));
+  if (topbarMealsTools) topbarMealsTools.classList.add("hidden");
+  if (topbarChoreTools) topbarChoreTools.classList.add("hidden");
+  closeDrawer();
+}
+
 function openUserProfileView() {
   const activeTab = document.querySelector(".tab-button.active")?.dataset.tab || "recipes";
   lastTabBeforeProfile = activeTab;
@@ -1152,6 +1469,7 @@ function openUserProfileView() {
     "choresListView",
     "addChoreView",
     "familyView",
+    "memberProfileView",
   ].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.classList.add("hidden");
@@ -1540,6 +1858,7 @@ async function handleLogout() {
   appState.chores = [];
   appState.weeklyChoreRows = [];
   appState.weeklyMeals = [];
+  appState.familyCalendarItems = [];
   appState.members = [];
   localStorage.removeItem("userId");
   localStorage.removeItem("familyId");
@@ -3040,6 +3359,7 @@ async function loadUserProfile() {
     appState.chores = [];
     appState.weeklyChoreRows = [];
     appState.weeklyMeals = [];
+    appState.familyCalendarItems = [];
     appState.members = [];
     localStorage.removeItem("familyId");
     clearFamilyListeners();
@@ -3058,6 +3378,7 @@ async function attachFamilyListeners(familyId) {
       appState.chores = [];
       appState.weeklyChoreRows = [];
       appState.weeklyMeals = [];
+      appState.familyCalendarItems = [];
       appState.members = [];
       render();
       return;
@@ -3118,6 +3439,17 @@ async function attachFamilyListeners(familyId) {
       renderWeeklyPlanTable();
     }
   );
+
+  unsubs.familyCalendar = onSnapshot(
+    collection(db, "families", familyId, "familyCalendar"),
+    (snap) => {
+      appState.familyCalendarItems = snap.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }));
+      renderFamilyView();
+    }
+  );
 }
 
 function clearFamilyListeners() {
@@ -3127,12 +3459,14 @@ function clearFamilyListeners() {
   if (unsubs.chores) unsubs.chores();
   if (unsubs.weeklyChores) unsubs.weeklyChores();
   if (unsubs.weeklyMeals) unsubs.weeklyMeals();
+  if (unsubs.familyCalendar) unsubs.familyCalendar();
   unsubs.family = null;
   unsubs.recipes = null;
   unsubs.tags = null;
   unsubs.chores = null;
   unsubs.weeklyChores = null;
   unsubs.weeklyMeals = null;
+  unsubs.familyCalendar = null;
 }
 
 async function pinExists(pin) {
