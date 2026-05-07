@@ -406,6 +406,7 @@ export default function App() {
                   Peruuta
                 </button>
               </div>
+              <p id="recipeFormMessage" className="hint" />
             </form>
           </section>
 
@@ -503,6 +504,7 @@ export default function App() {
                   Peruuta
                 </button>
               </div>
+              <p id="editRecipeFormMessage" className="hint" />
             </form>
           </section>
 

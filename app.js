@@ -177,6 +177,7 @@ const backFromChoresListBtn = document.getElementById(
 const addRecipeBtn = document.getElementById("addRecipeBtn");
 const backFromAddRecipeBtn = document.getElementById("backFromAddRecipeBtn");
 const addRecipeForm = document.getElementById("addRecipeForm");
+const recipeFormMessage = document.getElementById("recipeFormMessage");
 const cancelAddRecipeBtn = document.getElementById("cancelAddRecipeBtn");
 const closeAddRecipeBtn = document.getElementById("closeAddRecipeBtn");
 const addRecipeOverlay = document.getElementById("addRecipeOverlay");
@@ -189,6 +190,7 @@ const recipeDetailRatePrompt = document.getElementById("recipeDetailRatePrompt")
 const recipeDetailRateInput = document.getElementById("recipeDetailRateInput");
 const saveRecipeDetailRatingBtn = document.getElementById("saveRecipeDetailRatingBtn");
 const editRecipeForm = document.getElementById("editRecipeForm");
+const editRecipeFormMessage = document.getElementById("editRecipeFormMessage");
 const cancelEditRecipeBtn = document.getElementById("cancelEditRecipeBtn");
 const editRecipeOverlay = document.getElementById("editRecipeOverlay");
 const addChoreBtn = document.getElementById("addChoreBtn");
@@ -766,9 +768,10 @@ async function handleJoinFamily(event) {
 
 async function handleAddRecipe(event) {
   event.preventDefault();
+  setRecipeFormMessage("");
   const family = appState.currentFamily;
   if (!family) {
-    setupMessage.textContent = "Create or join a family first.";
+    setRecipeFormMessage("Create or join a family first.");
     return;
   }
 
@@ -782,7 +785,7 @@ async function handleAddRecipe(event) {
   const text = (formData.get("recipeText") || "").toString().trim();
 
   if (!name || !time) {
-    setupMessage.textContent = "Tayta pakolliset kentat: nimi ja aika.";
+    setRecipeFormMessage("Tayta pakolliset kentat: nimi ja aika.");
     return;
   }
 
@@ -811,18 +814,18 @@ async function handleAddRecipe(event) {
       createdAt: serverTimestamp(),
     });
     setupMessage.textContent = "";
+    setRecipeFormMessage("");
     resetAddRecipeForm();
     openRecipeSubView("meals");
   } catch (error) {
-    setupMessage.textContent = `Could not add recipe (${getFirebaseError(
-      error
-    )}).`;
+    setRecipeFormMessage(`Reseptin tallennus epäonnistui (${getStorageAwareError(error)}).`);
     console.error(error);
   }
 }
 
 async function handleEditRecipe(event) {
   event.preventDefault();
+  setEditRecipeFormMessage("");
   const family = appState.currentFamily;
   if (!family || !activeRecipeId) return;
 
@@ -836,7 +839,7 @@ async function handleEditRecipe(event) {
   const text = (formData.get("recipeText") || "").toString().trim();
 
   if (!name || !time) {
-    setupMessage.textContent = "Tayta pakolliset kentat: nimi ja aika.";
+    setEditRecipeFormMessage("Tayta pakolliset kentat: nimi ja aika.");
     return;
   }
 
@@ -873,11 +876,20 @@ async function handleEditRecipe(event) {
       updatedAt: serverTimestamp(),
     });
     setupMessage.textContent = "";
+    setEditRecipeFormMessage("");
     closeRecipeEditForm();
   } catch (error) {
-    setupMessage.textContent = `Could not update recipe (${getFirebaseError(error)}).`;
+    setEditRecipeFormMessage(`Reseptin tallennus epäonnistui (${getStorageAwareError(error)}).`);
     console.error(error);
   }
+}
+
+function setRecipeFormMessage(message) {
+  if (recipeFormMessage) recipeFormMessage.textContent = message;
+}
+
+function setEditRecipeFormMessage(message) {
+  if (editRecipeFormMessage) editRecipeFormMessage.textContent = message;
 }
 
 async function uploadRecipeImage(file, familyId, recipeId) {
@@ -1524,7 +1536,7 @@ async function handleSaveUserProfile() {
     profileFormMessage.textContent = "Tallennettu.";
     setProfileAvatarPreviewSrc();
   } catch (error) {
-    profileFormMessage.textContent = `Tallennus epäonnistui (${getFirebaseError(error)}).`;
+    profileFormMessage.textContent = `Tallennus epäonnistui (${getStorageAwareError(error)}).`;
     console.error(error);
   }
 }
@@ -3508,4 +3520,24 @@ function clearAuthReadyTimeout() {
 function getFirebaseError(error) {
   if (!error) return "unknown";
   return error.code || error.message || "unknown";
+}
+
+function getStorageAwareError(error) {
+  const raw = getFirebaseError(error);
+  if (raw === "storage/unauthorized") {
+    return "Firebase Storage rules denied the upload. Check that Storage is enabled and rules allow signed-in users.";
+  }
+  if (raw === "storage/bucket-not-found") {
+    return "Firebase Storage bucket was not found. Check the storageBucket value in firebase-config.js.";
+  }
+  if (raw === "storage/quota-exceeded") {
+    return "Firebase Storage quota has been exceeded.";
+  }
+  if (raw === "storage/canceled") {
+    return "upload was canceled.";
+  }
+  if (raw === "storage/unknown") {
+    return "Firebase Storage returned an unknown error. Check Storage setup and browser console.";
+  }
+  return raw;
 }
