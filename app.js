@@ -722,7 +722,10 @@ async function handleCreateFamily(event) {
       updatedAt: serverTimestamp(),
     });
 
-    appState.currentUser.familyId = familyRef.id;
+    appState.currentUser = {
+      ...(appState.currentUser || user),
+      familyId: familyRef.id,
+    };
     setupMessage.textContent = "";
     createFamilyForm.reset();
     await attachFamilyListeners(familyRef.id);
@@ -757,7 +760,10 @@ async function handleJoinFamily(event) {
       updatedAt: serverTimestamp(),
     });
 
-    appState.currentUser.familyId = familyDoc.id;
+    appState.currentUser = {
+      ...(appState.currentUser || user),
+      familyId: familyDoc.id,
+    };
     setupMessage.textContent = "";
     joinFamilyForm.reset();
     await attachFamilyListeners(familyDoc.id);
