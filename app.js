@@ -73,6 +73,7 @@ let headerBackAction = null;
 let activeChoreMenu = null;
 let familyCalendarSelectedDate = null;
 let familyCalendarMonthDate = new Date();
+let profileSetupInProgress = false;
 
 const authPanel = document.getElementById("authPanel");
 const appPanel = document.getElementById("appPanel");
@@ -544,6 +545,8 @@ async function bootstrap() {
           appState.members = [];
           localStorage.removeItem("userId");
           localStorage.removeItem("familyId");
+          clearAuthReadyTimeout();
+          setSignInReady(true);
           render();
           return;
         }
@@ -632,25 +635,30 @@ async function ensureAuthenticatedUserFromForm(formData) {
   if (!email) throw new Error("auth/invalid-username");
   if (!password || password.length < 6) throw new Error("auth/weak-password");
 
-  const credentials = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = credentials.user.uid;
-  await setDoc(doc(db, "users", uid), {
-    id: uid,
-    name,
-    username: username.toLowerCase(),
-    familyId: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  profileSetupInProgress = true;
+  try {
+    const credentials = await createUserWithEmailAndPassword(auth, email, password);
+    const uid = credentials.user.uid;
+    await setDoc(doc(db, "users", uid), {
+      id: uid,
+      name,
+      username: username.toLowerCase(),
+      familyId: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
-  appState.currentUserId = uid;
-  appState.currentUser = {
-    id: uid,
-    name,
-    username: username.toLowerCase(),
-    familyId: null,
-  };
-  return appState.currentUser;
+    appState.currentUserId = uid;
+    appState.currentUser = {
+      id: uid,
+      name,
+      username: username.toLowerCase(),
+      familyId: null,
+    };
+    return appState.currentUser;
+  } finally {
+    profileSetupInProgress = false;
+  }
 }
 
 async function handleSignIn(event) {
@@ -673,6 +681,8 @@ async function handleSignIn(event) {
   }
 
   try {
+    authMessage.textContent = "Kirjaudutaan...";
+    setSignInReady(false);
     const credentials = await signInWithEmailAndPassword(auth, email, password);
     appState.currentUserId = credentials.user.uid;
     await loadUserProfile();
@@ -688,6 +698,7 @@ async function handleSignIn(event) {
     } else {
       authMessage.textContent = `Kirjautuminen epäonnistui (${code}).`;
     }
+    setSignInReady(true);
     console.error(error);
     render();
   }
@@ -703,6 +714,7 @@ async function handleCreateFamily(event) {
   }
 
   try {
+    setupMessage.textContent = "Luodaan perhettä...";
     const user = await ensureAuthenticatedUserFromForm(formData);
     let pin = generatePin();
     while (await pinExists(pin)) {
@@ -742,6 +754,7 @@ async function handleJoinFamily(event) {
   const formData = new FormData(event.target);
   const pin = (formData.get("familyPin") || "").toString().trim();
   try {
+    setupMessage.textContent = "Liitytään perheeseen...";
     const user = await ensureAuthenticatedUserFromForm(formData);
     const familySnap = await getDocs(
       query(collection(db, "families"), where("pin", "==", pin))
@@ -3363,6 +3376,7 @@ async function loadUserProfile() {
   const userRef = doc(db, "users", appState.currentUserId);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
+    if (profileSetupInProgress) return;
     appState.currentUser = null;
     appState.currentFamily = null;
     clearFamilyListeners();
@@ -3529,7 +3543,14 @@ function clearAuthReadyTimeout() {
 
 function getAppError(error) {
   if (!error) return "unknown";
-  return error.code || error.message || "unknown";
+  const raw = error.code || error.message || "unknown";
+  if (raw === "auth/email-confirmation-required") {
+    return "Supabase email confirmation is enabled. Disable Confirm email for this username-based app, then try again.";
+  }
+  if (raw === "auth/email-already-in-use") {
+    return "This username already exists. If setup failed earlier with email confirmation enabled, delete that Supabase auth user or use a different username.";
+  }
+  return raw;
 }
 
 function getStorageAwareError(error) {

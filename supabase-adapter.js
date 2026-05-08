@@ -62,6 +62,7 @@ export async function createUserWithEmailAndPassword(auth, email, password) {
   const { data, error } = await auth.auth.signUp({ email, password });
   if (error) throw mapSupabaseAuthError(error);
   if (!data.user) throw new Error("auth/user-not-created");
+  if (!data.session) throw new Error("auth/email-confirmation-required");
   return { user: toAuthUser(data.user) };
 }
 
