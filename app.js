@@ -86,7 +86,9 @@ const drawerCloseBtn = document.getElementById("drawerCloseBtn");
 const signInForm = document.getElementById("signInForm");
 const signInBtn = signInForm.querySelector('button[type="submit"]');
 const createFamilyForm = document.getElementById("createFamilyForm");
+const createFamilySubmitBtn = createFamilyForm.querySelector('button[type="submit"]');
 const joinFamilyForm = document.getElementById("joinFamilyForm");
+const joinFamilySubmitBtn = joinFamilyForm.querySelector('button[type="submit"]');
 const authLoginModeBtn = document.getElementById("authLoginModeBtn");
 const createFamilyBtn = document.getElementById("createFamilyBtn");
 const joinFamilyBtn = document.getElementById("joinFamilyBtn");
@@ -516,9 +518,11 @@ function generatePin() {
 }
 
 async function bootstrap() {
+  authMessage.textContent = "Yhdistetään Supabaseen...";
   if (!isSupabaseConfigured()) {
     authMessage.textContent =
-      "Supabase config missing. Update supabase-config.js first.";
+      "Supabase config missing. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.";
+    setSignInReady(true);
     render();
     return;
   }
@@ -570,7 +574,7 @@ async function bootstrap() {
     authMessage.textContent = `Supabase failed to initialize (${getAppError(
       error
     )}). Check supabase-config.js values.`;
-    setSignInReady(false);
+    setSignInReady(true);
     console.error(error);
   }
 
@@ -665,8 +669,8 @@ async function handleSignIn(event) {
   event.preventDefault();
   if (!auth || !db) {
     authMessage.textContent =
-      "Sign-in session is not ready. Refresh page and ensure Email auth is enabled in Supabase.";
-    setSignInReady(false);
+      "Supabase is not connected. Check Vercel environment variables and redeploy the frontend.";
+    setSignInReady(true);
     return;
   }
 
@@ -706,6 +710,7 @@ async function handleSignIn(event) {
 
 async function handleCreateFamily(event) {
   event.preventDefault();
+  if (!isBackendReadyForSetup(AUTH_MODES.create)) return;
   const formData = new FormData(event.target);
   const familyName = (formData.get("familyName") || "").toString().trim();
   if (!familyName) {
@@ -715,6 +720,7 @@ async function handleCreateFamily(event) {
 
   try {
     setupMessage.textContent = "Luodaan perhettä...";
+    setFamilySetupButtonsReady(false);
     const user = await ensureAuthenticatedUserFromForm(formData);
     let pin = generatePin();
     while (await pinExists(pin)) {
@@ -746,15 +752,19 @@ async function handleCreateFamily(event) {
       error
     )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
+  } finally {
+    setFamilySetupButtonsReady(true);
   }
 }
 
 async function handleJoinFamily(event) {
   event.preventDefault();
+  if (!isBackendReadyForSetup(AUTH_MODES.join)) return;
   const formData = new FormData(event.target);
   const pin = (formData.get("familyPin") || "").toString().trim();
   try {
     setupMessage.textContent = "Liitytään perheeseen...";
+    setFamilySetupButtonsReady(false);
     const user = await ensureAuthenticatedUserFromForm(formData);
     const familySnap = await getDocs(
       query(collection(db, "families"), where("pin", "==", pin))
@@ -785,6 +795,30 @@ async function handleJoinFamily(event) {
       error
     )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
+  } finally {
+    setFamilySetupButtonsReady(true);
+  }
+}
+
+function isBackendReadyForSetup(mode) {
+  if (auth && db) return true;
+  const message =
+    "Supabase is not connected. Check Vercel environment variables and redeploy the frontend.";
+  setupMessage.textContent = message;
+  if (mode === AUTH_MODES.login) authMessage.textContent = message;
+  setSignInReady(true);
+  setFamilySetupButtonsReady(true);
+  return false;
+}
+
+function setFamilySetupButtonsReady(isReady) {
+  if (createFamilySubmitBtn) {
+    createFamilySubmitBtn.disabled = !isReady;
+    createFamilySubmitBtn.textContent = isReady ? "Create" : "Working...";
+  }
+  if (joinFamilySubmitBtn) {
+    joinFamilySubmitBtn.disabled = !isReady;
+    joinFamilySubmitBtn.textContent = isReady ? "Join" : "Working...";
   }
 }
 
