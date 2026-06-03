@@ -62,6 +62,7 @@ export async function createUserWithEmailAndPassword(auth, email, password) {
   const { data, error } = await auth.auth.signUp({ email, password });
   if (error) throw mapSupabaseAuthError(error);
   if (!data.user) throw new Error("auth/user-not-created");
+  if (!data.session) throw new Error("auth/email-confirmation-required");
   return { user: toAuthUser(data.user) };
 }
 
@@ -275,14 +276,30 @@ function toAuthUser(user) {
 }
 
 function mapSupabaseAuthError(error) {
+  const code = (error.code || "").toLowerCase();
   const message = (error.message || "").toLowerCase();
+  if (
+    code.includes("email_exists") ||
+    code.includes("user_already") ||
+    code.includes("already_registered") ||
+    code.includes("email_already") ||
+    code.includes("identity_already")
+  ) {
+    return new Error("auth/email-already-in-use");
+  }
   if (message.includes("invalid login credentials")) {
     return new Error("auth/invalid-credential");
   }
   if (message.includes("password")) {
     return new Error("auth/weak-password");
   }
-  if (message.includes("already registered") || message.includes("already been registered")) {
+  if (
+    message.includes("already registered") ||
+    message.includes("already been registered") ||
+    message.includes("already exists") ||
+    message.includes("user already") ||
+    message.includes("email exists")
+  ) {
     return new Error("auth/email-already-in-use");
   }
   return error;

@@ -73,6 +73,7 @@ let headerBackAction = null;
 let activeChoreMenu = null;
 let familyCalendarSelectedDate = null;
 let familyCalendarMonthDate = new Date();
+let profileSetupInProgress = false;
 
 const authPanel = document.getElementById("authPanel");
 const appPanel = document.getElementById("appPanel");
@@ -85,7 +86,9 @@ const drawerCloseBtn = document.getElementById("drawerCloseBtn");
 const signInForm = document.getElementById("signInForm");
 const signInBtn = signInForm.querySelector('button[type="submit"]');
 const createFamilyForm = document.getElementById("createFamilyForm");
+const createFamilySubmitBtn = createFamilyForm.querySelector('button[type="submit"]');
 const joinFamilyForm = document.getElementById("joinFamilyForm");
+const joinFamilySubmitBtn = joinFamilyForm.querySelector('button[type="submit"]');
 const authLoginModeBtn = document.getElementById("authLoginModeBtn");
 const createFamilyBtn = document.getElementById("createFamilyBtn");
 const joinFamilyBtn = document.getElementById("joinFamilyBtn");
@@ -515,9 +518,11 @@ function generatePin() {
 }
 
 async function bootstrap() {
+  authMessage.textContent = "Yhdistetään Supabaseen...";
   if (!isSupabaseConfigured()) {
     authMessage.textContent =
-      "Supabase config missing. Update supabase-config.js first.";
+      "Supabase config missing. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel, then redeploy.";
+    setSignInReady(true);
     render();
     return;
   }
@@ -544,6 +549,8 @@ async function bootstrap() {
           appState.members = [];
           localStorage.removeItem("userId");
           localStorage.removeItem("familyId");
+          clearAuthReadyTimeout();
+          setSignInReady(true);
           render();
           return;
         }
@@ -553,7 +560,7 @@ async function bootstrap() {
         setSignInReady(true);
         appState.currentUserId = user.uid;
         localStorage.setItem("userId", user.uid);
-        await loadUserProfile();
+        await loadUserProfile(user);
         render();
       } catch (error) {
         authMessage.textContent = `Could not start sign-in session (${getAppError(
@@ -567,7 +574,7 @@ async function bootstrap() {
     authMessage.textContent = `Supabase failed to initialize (${getAppError(
       error
     )}). Check supabase-config.js values.`;
-    setSignInReady(false);
+    setSignInReady(true);
     console.error(error);
   }
 
@@ -621,44 +628,106 @@ function usernameToEmail(rawUsername) {
 }
 
 async function ensureAuthenticatedUserFromForm(formData) {
-  if (appState.currentUser) return appState.currentUser;
   if (!auth || !db) throw new Error("auth/not-ready");
 
   const name = (formData.get("displayName") || "").toString().trim();
   const username = (formData.get("username") || "").toString().trim();
+  const normalizedUsername = username.toLowerCase();
   const password = (formData.get("password") || "").toString();
   if (!name) throw new Error("auth/missing-name");
   const email = usernameToEmail(username);
   if (!email) throw new Error("auth/invalid-username");
   if (!password || password.length < 6) throw new Error("auth/weak-password");
 
-  const credentials = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = credentials.user.uid;
-  await setDoc(doc(db, "users", uid), {
-    id: uid,
-    name,
-    username: username.toLowerCase(),
-    familyId: null,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  if (appState.currentUser) {
+    const currentUsername = (appState.currentUser.username || "").toString().toLowerCase();
+    if (currentUsername === normalizedUsername) return appState.currentUser;
+    clearSignedInAppState();
+  }
 
-  appState.currentUserId = uid;
-  appState.currentUser = {
-    id: uid,
-    name,
-    username: username.toLowerCase(),
-    familyId: null,
-  };
-  return appState.currentUser;
+  profileSetupInProgress = true;
+  try {
+    await signOut(auth);
+    const credentials = await createOrSignInUserFromForm(auth, email, password);
+    await ensureCredentialsMatchEmail(credentials, email);
+    const uid = credentials.user.uid;
+    await updateDocOrSet(doc(db, "users", uid), {
+      id: uid,
+      name,
+      username: normalizedUsername,
+      familyId: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    appState.currentUserId = uid;
+    appState.currentUser = {
+      id: uid,
+      name,
+      username: normalizedUsername,
+      familyId: null,
+    };
+    return appState.currentUser;
+  } finally {
+    profileSetupInProgress = false;
+  }
+}
+
+async function ensureCredentialsMatchEmail(credentials, expectedEmail) {
+  const actualEmail = (credentials?.user?.email || "").toString().toLowerCase();
+  if (!actualEmail || actualEmail === expectedEmail.toLowerCase()) return;
+  await signOut(auth);
+  clearSignedInAppState();
+  throw new Error("auth/session-mismatch");
+}
+
+async function createOrSignInUserFromForm(authClient, email, password) {
+  try {
+    return await createUserWithEmailAndPassword(authClient, email, password);
+  } catch (error) {
+    if (!isEmailAlreadyInUseError(error)) throw error;
+    return signInWithEmailAndPassword(authClient, email, password);
+  }
+}
+
+function isEmailAlreadyInUseError(error) {
+  const raw = getAppError(error).toLowerCase();
+  return (
+    raw === "auth/email-already-in-use" ||
+    raw.includes("email_exists") ||
+    raw.includes("user_already") ||
+    raw.includes("already_registered") ||
+    raw.includes("email_already") ||
+    raw.includes("identity_already") ||
+    raw.includes("already registered") ||
+    raw.includes("already been registered") ||
+    raw.includes("already exists") ||
+    raw.includes("email exists")
+  );
+}
+
+function clearSignedInAppState() {
+  clearFamilyListeners();
+  appState.currentUserId = null;
+  appState.currentUser = null;
+  appState.currentFamily = null;
+  appState.recipes = [];
+  appState.tags = [];
+  appState.chores = [];
+  appState.weeklyChoreRows = [];
+  appState.weeklyMeals = [];
+  appState.familyCalendarItems = [];
+  appState.members = [];
+  localStorage.removeItem("userId");
+  localStorage.removeItem("familyId");
 }
 
 async function handleSignIn(event) {
   event.preventDefault();
   if (!auth || !db) {
     authMessage.textContent =
-      "Sign-in session is not ready. Refresh page and ensure Email auth is enabled in Supabase.";
-    setSignInReady(false);
+      "Supabase is not connected. Check Vercel environment variables and redeploy the frontend.";
+    setSignInReady(true);
     return;
   }
 
@@ -673,10 +742,17 @@ async function handleSignIn(event) {
   }
 
   try {
+    authMessage.textContent = "Kirjaudutaan...";
+    setSignInReady(false);
     const credentials = await signInWithEmailAndPassword(auth, email, password);
     appState.currentUserId = credentials.user.uid;
-    await loadUserProfile();
-    authMessage.textContent = "";
+    await loadUserProfile(credentials.user);
+    if (appState.currentUser && !appState.currentFamily) {
+      authMessage.textContent =
+        "Kirjautuminen onnistui. Luo perhe tai liity perheeseen jatkaaksesi.";
+    } else {
+      authMessage.textContent = "";
+    }
     setSignInReady(true);
     signInForm.reset();
     render();
@@ -688,6 +764,7 @@ async function handleSignIn(event) {
     } else {
       authMessage.textContent = `Kirjautuminen epäonnistui (${code}).`;
     }
+    setSignInReady(true);
     console.error(error);
     render();
   }
@@ -695,6 +772,7 @@ async function handleSignIn(event) {
 
 async function handleCreateFamily(event) {
   event.preventDefault();
+  if (!isBackendReadyForSetup(AUTH_MODES.create)) return;
   const formData = new FormData(event.target);
   const familyName = (formData.get("familyName") || "").toString().trim();
   if (!familyName) {
@@ -703,6 +781,8 @@ async function handleCreateFamily(event) {
   }
 
   try {
+    setupMessage.textContent = "Luodaan perhettä...";
+    setFamilySetupButtonsReady(false);
     const user = await ensureAuthenticatedUserFromForm(formData);
     let pin = generatePin();
     while (await pinExists(pin)) {
@@ -717,12 +797,18 @@ async function handleCreateFamily(event) {
       createdAt: serverTimestamp(),
     });
 
-    await updateDoc(doc(db, "users", user.id), {
+    await updateDocOrSet(doc(db, "users", user.id), {
+      id: user.id,
+      name: user.name || "",
+      username: user.username || "",
       familyId: familyRef.id,
       updatedAt: serverTimestamp(),
     });
 
-    appState.currentUser.familyId = familyRef.id;
+    appState.currentUser = {
+      ...(appState.currentUser || user),
+      familyId: familyRef.id,
+    };
     setupMessage.textContent = "";
     createFamilyForm.reset();
     await attachFamilyListeners(familyRef.id);
@@ -731,14 +817,19 @@ async function handleCreateFamily(event) {
       error
     )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
+  } finally {
+    setFamilySetupButtonsReady(true);
   }
 }
 
 async function handleJoinFamily(event) {
   event.preventDefault();
+  if (!isBackendReadyForSetup(AUTH_MODES.join)) return;
   const formData = new FormData(event.target);
   const pin = (formData.get("familyPin") || "").toString().trim();
   try {
+    setupMessage.textContent = "Liitytään perheeseen...";
+    setFamilySetupButtonsReady(false);
     const user = await ensureAuthenticatedUserFromForm(formData);
     const familySnap = await getDocs(
       query(collection(db, "families"), where("pin", "==", pin))
@@ -752,12 +843,18 @@ async function handleJoinFamily(event) {
     await updateDoc(doc(db, "families", familyDoc.id), {
       members: arrayUnion(user.id),
     });
-    await updateDoc(doc(db, "users", user.id), {
+    await updateDocOrSet(doc(db, "users", user.id), {
+      id: user.id,
+      name: user.name || "",
+      username: user.username || "",
       familyId: familyDoc.id,
       updatedAt: serverTimestamp(),
     });
 
-    appState.currentUser.familyId = familyDoc.id;
+    appState.currentUser = {
+      ...(appState.currentUser || user),
+      familyId: familyDoc.id,
+    };
     setupMessage.textContent = "";
     joinFamilyForm.reset();
     await attachFamilyListeners(familyDoc.id);
@@ -766,6 +863,30 @@ async function handleJoinFamily(event) {
       error
     )}). Check Supabase setup and row-level security policies.`;
     console.error(error);
+  } finally {
+    setFamilySetupButtonsReady(true);
+  }
+}
+
+function isBackendReadyForSetup(mode) {
+  if (auth && db) return true;
+  const message =
+    "Supabase is not connected. Check Vercel environment variables and redeploy the frontend.";
+  setupMessage.textContent = message;
+  if (mode === AUTH_MODES.login) authMessage.textContent = message;
+  setSignInReady(true);
+  setFamilySetupButtonsReady(true);
+  return false;
+}
+
+function setFamilySetupButtonsReady(isReady) {
+  if (createFamilySubmitBtn) {
+    createFamilySubmitBtn.disabled = !isReady;
+    createFamilySubmitBtn.textContent = isReady ? "Create" : "Working...";
+  }
+  if (joinFamilySubmitBtn) {
+    joinFamilySubmitBtn.disabled = !isReady;
+    joinFamilySubmitBtn.textContent = isReady ? "Join" : "Working...";
   }
 }
 
@@ -3353,13 +3474,17 @@ async function handleEditChore(chore) {
   }
 }
 
-async function loadUserProfile() {
+async function loadUserProfile(authUser = null) {
   const userRef = doc(db, "users", appState.currentUserId);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
-    appState.currentUser = null;
+    if (profileSetupInProgress) return;
+    const fallbackUser = getFallbackUserFromAuth(authUser);
+    appState.currentUser = fallbackUser;
     appState.currentFamily = null;
     clearFamilyListeners();
+    authMessage.textContent =
+      "Kirjautuminen onnistui, mutta käyttäjäprofiilia ei löytynyt. Luo perhe tai liity perheeseen jatkaaksesi.";
     return;
   }
 
@@ -3380,6 +3505,22 @@ async function loadUserProfile() {
     localStorage.removeItem("familyId");
     clearFamilyListeners();
   }
+}
+
+function getFallbackUserFromAuth(authUser) {
+  const id = authUser?.uid || authUser?.id || appState.currentUserId;
+  const username = (authUser?.email || "").split("@")[0] || "";
+  const name =
+    authUser?.user_metadata?.name ||
+    authUser?.user_metadata?.display_name ||
+    username ||
+    "User";
+  return {
+    id,
+    name,
+    username,
+    familyId: null,
+  };
 }
 
 async function attachFamilyListeners(familyId) {
@@ -3523,7 +3664,17 @@ function clearAuthReadyTimeout() {
 
 function getAppError(error) {
   if (!error) return "unknown";
-  return error.code || error.message || "unknown";
+  const raw = error.code || error.message || "unknown";
+  if (raw === "auth/email-confirmation-required") {
+    return "Supabase email confirmation is enabled. Disable Confirm email for this username-based app, then try again.";
+  }
+  if (raw === "auth/email-already-in-use") {
+    return "This username already exists. If setup failed earlier with email confirmation enabled, delete that Supabase auth user or use a different username.";
+  }
+  if (raw === "auth/session-mismatch") {
+    return "Supabase returned a different logged-in user than the username in the form. Log out, refresh the page, and try again.";
+  }
+  return raw;
 }
 
 function getStorageAwareError(error) {
