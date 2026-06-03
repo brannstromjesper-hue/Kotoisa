@@ -762,6 +762,7 @@ async function handleSignIn(event) {
     setSignInReady(true);
     signInForm.reset();
     render();
+    if (appState.currentFamily) openTab("family");
   } catch (error) {
     const code = getAppError(error);
     if (code === "auth/invalid-credential") {
@@ -3623,6 +3624,7 @@ async function enterFamily(familyId) {
   await loadFamilyImmediately(familyId);
   attachFamilyListeners(familyId);
   render();
+  openTab("family");
 }
 
 function clearActiveFamilyState() {
