@@ -3483,21 +3483,31 @@ async function handleEditChore(chore) {
 async function loadUserProfile(authUser = null) {
   const uid = appState.currentUserId;
   const userRef = doc(db, "users", appState.currentUserId);
+  const fallbackUser = getFallbackUserFromAuth(authUser);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
     if (profileSetupInProgress) return;
-    const fallbackUser = getFallbackUserFromAuth(authUser);
-    appState.currentUser = fallbackUser;
-    const existingFamily = await findFamilyForUser(uid);
+    const matchingUser = await findUserProfileByUsername(fallbackUser.username);
+    appState.currentUser = {
+      ...fallbackUser,
+      ...(matchingUser || {}),
+      id: uid,
+    };
+    const existingFamily =
+      (matchingUser?.familyId ? { id: matchingUser.familyId } : null) ||
+      (matchingUser?.id ? await findFamilyForUser(matchingUser.id) : null) ||
+      (await findFamilyForUser(uid));
     if (existingFamily) {
+      const familyId = existingFamily.id;
       await updateDocOrSet(userRef, {
-        ...fallbackUser,
-        familyId: existingFamily.id,
+        ...appState.currentUser,
+        familyId,
         updatedAt: serverTimestamp(),
       });
-      appState.currentUser = { ...fallbackUser, familyId: existingFamily.id };
-      await loadFamilyImmediately(existingFamily.id);
-      attachFamilyListeners(existingFamily.id);
+      await ensureFamilyIncludesUser(familyId, uid);
+      appState.currentUser = { ...appState.currentUser, familyId };
+      await loadFamilyImmediately(familyId);
+      attachFamilyListeners(familyId);
       return;
     }
     clearActiveFamilyState();
@@ -3510,13 +3520,20 @@ async function loadUserProfile(authUser = null) {
 
   let familyId = appState.currentUser.familyId || "";
   if (!familyId) {
-    const existingFamily = await findFamilyForUser(uid);
+    const matchingUser = await findUserProfileByUsername(
+      appState.currentUser.username || fallbackUser.username
+    );
+    const existingFamily =
+      (matchingUser?.familyId ? { id: matchingUser.familyId } : null) ||
+      (matchingUser?.id ? await findFamilyForUser(matchingUser.id) : null) ||
+      (await findFamilyForUser(uid));
     if (existingFamily) {
       familyId = existingFamily.id;
       await updateDoc(userRef, {
         familyId,
         updatedAt: serverTimestamp(),
       });
+      await ensureFamilyIncludesUser(familyId, uid);
       appState.currentUser.familyId = familyId;
     }
   }
@@ -3547,6 +3564,16 @@ function getFallbackUserFromAuth(authUser) {
   };
 }
 
+async function findUserProfileByUsername(username) {
+  const normalized = (username || "").toString().trim().toLowerCase();
+  if (!normalized) return null;
+  const usersSnap = await getDocs(query(collection(db, "users"), where("username", "==", normalized)));
+  if (usersSnap.empty) return null;
+  const withFamily = usersSnap.docs.find((userDoc) => !!userDoc.data().familyId);
+  const userDoc = withFamily || usersSnap.docs[0];
+  return { id: userDoc.id, ...userDoc.data() };
+}
+
 async function findFamilyForUser(userId) {
   if (!userId) return null;
   const familiesSnap = await getDocs(collection(db, "families"));
@@ -3556,6 +3583,19 @@ async function findFamilyForUser(userId) {
   });
   if (!familySnap) return null;
   return { id: familySnap.id, ...familySnap.data() };
+}
+
+async function ensureFamilyIncludesUser(familyId, userId) {
+  if (!familyId || !userId) return;
+  const familyRef = doc(db, "families", familyId);
+  const familySnap = await getDoc(familyRef);
+  if (!familySnap.exists()) return;
+  const members = familySnap.data().members || [];
+  if (Array.isArray(members) && members.includes(userId)) return;
+  await updateDoc(familyRef, {
+    members: arrayUnion(userId),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 async function loadFamilyImmediately(familyId) {
