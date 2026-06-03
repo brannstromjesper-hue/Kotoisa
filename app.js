@@ -762,6 +762,7 @@ async function handleSignIn(event) {
     setSignInReady(true);
     signInForm.reset();
     render();
+    if (appState.currentFamily) openTab("family");
   } catch (error) {
     const code = getAppError(error);
     if (code === "auth/invalid-credential") {
@@ -817,7 +818,7 @@ async function handleCreateFamily(event) {
     };
     setupMessage.textContent = "";
     createFamilyForm.reset();
-    await attachFamilyListeners(familyRef.id);
+    await enterFamily(familyRef.id);
   } catch (error) {
     setupMessage.textContent = `Could not create family (${getAppError(
       error
@@ -863,7 +864,7 @@ async function handleJoinFamily(event) {
     };
     setupMessage.textContent = "";
     joinFamilyForm.reset();
-    await attachFamilyListeners(familyDoc.id);
+    await enterFamily(familyDoc.id);
   } catch (error) {
     setupMessage.textContent = `Could not join family (${getAppError(
       error
@@ -3616,6 +3617,14 @@ async function loadFamilyImmediately(familyId) {
   }
   appState.currentFamily = { id: familySnap.id, ...familySnap.data() };
   await loadFamilyMembers(appState.currentFamily.members || []);
+}
+
+async function enterFamily(familyId) {
+  localStorage.setItem("familyId", familyId);
+  await loadFamilyImmediately(familyId);
+  attachFamilyListeners(familyId);
+  render();
+  openTab("family");
 }
 
 function clearActiveFamilyState() {
