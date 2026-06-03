@@ -642,13 +642,14 @@ async function ensureAuthenticatedUserFromForm(formData) {
   if (appState.currentUser) {
     const currentUsername = (appState.currentUser.username || "").toString().toLowerCase();
     if (currentUsername === normalizedUsername) return appState.currentUser;
-    await signOut(auth);
     clearSignedInAppState();
   }
 
   profileSetupInProgress = true;
   try {
+    await signOut(auth);
     const credentials = await createOrSignInUserFromForm(auth, email, password);
+    await ensureCredentialsMatchEmail(credentials, email);
     const uid = credentials.user.uid;
     await updateDocOrSet(doc(db, "users", uid), {
       id: uid,
@@ -670,6 +671,14 @@ async function ensureAuthenticatedUserFromForm(formData) {
   } finally {
     profileSetupInProgress = false;
   }
+}
+
+async function ensureCredentialsMatchEmail(credentials, expectedEmail) {
+  const actualEmail = (credentials?.user?.email || "").toString().toLowerCase();
+  if (!actualEmail || actualEmail === expectedEmail.toLowerCase()) return;
+  await signOut(auth);
+  clearSignedInAppState();
+  throw new Error("auth/session-mismatch");
 }
 
 async function createOrSignInUserFromForm(authClient, email, password) {
@@ -3661,6 +3670,9 @@ function getAppError(error) {
   }
   if (raw === "auth/email-already-in-use") {
     return "This username already exists. If setup failed earlier with email confirmation enabled, delete that Supabase auth user or use a different username.";
+  }
+  if (raw === "auth/session-mismatch") {
+    return "Supabase returned a different logged-in user than the username in the form. Log out, refresh the page, and try again.";
   }
   return raw;
 }
