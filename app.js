@@ -591,13 +591,19 @@ function render() {
   const user = appState.currentUser;
   const family = appState.currentFamily;
 
-  authPanel.classList.toggle("hidden", !!user && !!family);
-  appPanel.classList.toggle("hidden", !user || !family);
+  authPanel.classList.toggle("hidden", !!user);
+  appPanel.classList.toggle("hidden", !user);
 
   if (user && family) {
     if (familyNameLabel) familyNameLabel.textContent = family.name || "";
     if (familyPinLabel) familyPinLabel.textContent = family.pin || "";
     renderFamilyView();
+    renderRecipes();
+    renderChores();
+  } else if (user) {
+    renderFamilyView();
+    if (familyNameLabel) familyNameLabel.textContent = "No family loaded";
+    if (familyPinLabel) familyPinLabel.textContent = "";
     renderRecipes();
     renderChores();
   }
