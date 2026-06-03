@@ -560,7 +560,7 @@ async function bootstrap() {
         setSignInReady(true);
         appState.currentUserId = user.uid;
         localStorage.setItem("userId", user.uid);
-        await loadUserProfile();
+        await loadUserProfile(user);
         render();
       } catch (error) {
         authMessage.textContent = `Could not start sign-in session (${getAppError(
@@ -689,8 +689,13 @@ async function handleSignIn(event) {
     setSignInReady(false);
     const credentials = await signInWithEmailAndPassword(auth, email, password);
     appState.currentUserId = credentials.user.uid;
-    await loadUserProfile();
-    authMessage.textContent = "";
+    await loadUserProfile(credentials.user);
+    if (appState.currentUser && !appState.currentFamily) {
+      authMessage.textContent =
+        "Kirjautuminen onnistui. Luo perhe tai liity perheeseen jatkaaksesi.";
+    } else {
+      authMessage.textContent = "";
+    }
     setSignInReady(true);
     signInForm.reset();
     render();
@@ -735,7 +740,10 @@ async function handleCreateFamily(event) {
       createdAt: serverTimestamp(),
     });
 
-    await updateDoc(doc(db, "users", user.id), {
+    await updateDocOrSet(doc(db, "users", user.id), {
+      id: user.id,
+      name: user.name || "",
+      username: user.username || "",
       familyId: familyRef.id,
       updatedAt: serverTimestamp(),
     });
@@ -778,7 +786,10 @@ async function handleJoinFamily(event) {
     await updateDoc(doc(db, "families", familyDoc.id), {
       members: arrayUnion(user.id),
     });
-    await updateDoc(doc(db, "users", user.id), {
+    await updateDocOrSet(doc(db, "users", user.id), {
+      id: user.id,
+      name: user.name || "",
+      username: user.username || "",
       familyId: familyDoc.id,
       updatedAt: serverTimestamp(),
     });
@@ -3406,14 +3417,17 @@ async function handleEditChore(chore) {
   }
 }
 
-async function loadUserProfile() {
+async function loadUserProfile(authUser = null) {
   const userRef = doc(db, "users", appState.currentUserId);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
     if (profileSetupInProgress) return;
-    appState.currentUser = null;
+    const fallbackUser = getFallbackUserFromAuth(authUser);
+    appState.currentUser = fallbackUser;
     appState.currentFamily = null;
     clearFamilyListeners();
+    authMessage.textContent =
+      "Kirjautuminen onnistui, mutta käyttäjäprofiilia ei löytynyt. Luo perhe tai liity perheeseen jatkaaksesi.";
     return;
   }
 
@@ -3434,6 +3448,22 @@ async function loadUserProfile() {
     localStorage.removeItem("familyId");
     clearFamilyListeners();
   }
+}
+
+function getFallbackUserFromAuth(authUser) {
+  const id = authUser?.uid || authUser?.id || appState.currentUserId;
+  const username = (authUser?.email || "").split("@")[0] || "";
+  const name =
+    authUser?.user_metadata?.name ||
+    authUser?.user_metadata?.display_name ||
+    username ||
+    "User";
+  return {
+    id,
+    name,
+    username,
+    familyId: null,
+  };
 }
 
 async function attachFamilyListeners(familyId) {
