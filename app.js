@@ -628,25 +628,32 @@ function usernameToEmail(rawUsername) {
 }
 
 async function ensureAuthenticatedUserFromForm(formData) {
-  if (appState.currentUser) return appState.currentUser;
   if (!auth || !db) throw new Error("auth/not-ready");
 
   const name = (formData.get("displayName") || "").toString().trim();
   const username = (formData.get("username") || "").toString().trim();
+  const normalizedUsername = username.toLowerCase();
   const password = (formData.get("password") || "").toString();
   if (!name) throw new Error("auth/missing-name");
   const email = usernameToEmail(username);
   if (!email) throw new Error("auth/invalid-username");
   if (!password || password.length < 6) throw new Error("auth/weak-password");
 
+  if (appState.currentUser) {
+    const currentUsername = (appState.currentUser.username || "").toString().toLowerCase();
+    if (currentUsername === normalizedUsername) return appState.currentUser;
+    await signOut(auth);
+    clearSignedInAppState();
+  }
+
   profileSetupInProgress = true;
   try {
-    const credentials = await createUserWithEmailAndPassword(auth, email, password);
+    const credentials = await createOrSignInUserFromForm(auth, email, password);
     const uid = credentials.user.uid;
-    await setDoc(doc(db, "users", uid), {
+    await updateDocOrSet(doc(db, "users", uid), {
       id: uid,
       name,
-      username: username.toLowerCase(),
+      username: normalizedUsername,
       familyId: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -656,13 +663,38 @@ async function ensureAuthenticatedUserFromForm(formData) {
     appState.currentUser = {
       id: uid,
       name,
-      username: username.toLowerCase(),
+      username: normalizedUsername,
       familyId: null,
     };
     return appState.currentUser;
   } finally {
     profileSetupInProgress = false;
   }
+}
+
+async function createOrSignInUserFromForm(authClient, email, password) {
+  try {
+    return await createUserWithEmailAndPassword(authClient, email, password);
+  } catch (error) {
+    if (getAppError(error) !== "auth/email-already-in-use") throw error;
+    return signInWithEmailAndPassword(authClient, email, password);
+  }
+}
+
+function clearSignedInAppState() {
+  clearFamilyListeners();
+  appState.currentUserId = null;
+  appState.currentUser = null;
+  appState.currentFamily = null;
+  appState.recipes = [];
+  appState.tags = [];
+  appState.chores = [];
+  appState.weeklyChoreRows = [];
+  appState.weeklyMeals = [];
+  appState.familyCalendarItems = [];
+  appState.members = [];
+  localStorage.removeItem("userId");
+  localStorage.removeItem("familyId");
 }
 
 async function handleSignIn(event) {
