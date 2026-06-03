@@ -676,9 +676,25 @@ async function createOrSignInUserFromForm(authClient, email, password) {
   try {
     return await createUserWithEmailAndPassword(authClient, email, password);
   } catch (error) {
-    if (getAppError(error) !== "auth/email-already-in-use") throw error;
+    if (!isEmailAlreadyInUseError(error)) throw error;
     return signInWithEmailAndPassword(authClient, email, password);
   }
+}
+
+function isEmailAlreadyInUseError(error) {
+  const raw = getAppError(error).toLowerCase();
+  return (
+    raw === "auth/email-already-in-use" ||
+    raw.includes("email_exists") ||
+    raw.includes("user_already") ||
+    raw.includes("already_registered") ||
+    raw.includes("email_already") ||
+    raw.includes("identity_already") ||
+    raw.includes("already registered") ||
+    raw.includes("already been registered") ||
+    raw.includes("already exists") ||
+    raw.includes("email exists")
+  );
 }
 
 function clearSignedInAppState() {
