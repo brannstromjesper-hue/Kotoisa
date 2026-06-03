@@ -1228,8 +1228,13 @@ async function handleDeleteTag(tagId) {
 }
 
 function renderFamilyView() {
-  if (familyNameLabel) familyNameLabel.textContent = appState.currentFamily?.name || "";
-  if (familyPinLabel) familyPinLabel.textContent = appState.currentFamily?.pin || "";
+  const family = appState.currentFamily;
+  if (familyNameLabel) {
+    familyNameLabel.textContent = family?.name || "No family loaded";
+  }
+  if (familyPinLabel) {
+    familyPinLabel.textContent = family?.pin || "Log in again or create/join a family";
+  }
   renderFamilyMemberAvatars();
   renderFamilyCalendar();
 }
@@ -3481,36 +3486,59 @@ async function handleEditChore(chore) {
 }
 
 async function loadUserProfile(authUser = null) {
+  const uid = appState.currentUserId;
   const userRef = doc(db, "users", appState.currentUserId);
+  const fallbackUser = getFallbackUserFromAuth(authUser);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
     if (profileSetupInProgress) return;
-    const fallbackUser = getFallbackUserFromAuth(authUser);
     appState.currentUser = fallbackUser;
-    appState.currentFamily = null;
-    clearFamilyListeners();
+    const existingFamily = await findRecoverableFamilyForUser(uid, fallbackUser.username);
+    if (existingFamily) {
+      await updateDocOrSet(userRef, {
+        ...fallbackUser,
+        familyId: existingFamily.id,
+        updatedAt: serverTimestamp(),
+      });
+      await ensureFamilyIncludesUser(existingFamily.id, uid);
+      appState.currentUser = { ...fallbackUser, familyId: existingFamily.id };
+      await loadFamilyImmediately(existingFamily.id);
+      attachFamilyListeners(existingFamily.id);
+      return;
+    }
+    clearActiveFamilyState();
     authMessage.textContent =
-      "Kirjautuminen onnistui, mutta käyttäjäprofiilia ei löytynyt. Luo perhe tai liity perheeseen jatkaaksesi.";
+      "Kirjautuminen onnistui, mutta käyttäjää ei ole liitetty perheeseen. Luo perhe tai liity perheeseen jatkaaksesi.";
     return;
   }
 
   appState.currentUser = { id: snap.id, ...snap.data() };
 
-  if (appState.currentUser.familyId) {
-    localStorage.setItem("familyId", appState.currentUser.familyId);
-    await attachFamilyListeners(appState.currentUser.familyId);
-  } else {
-    appState.currentFamily = null;
-    appState.recipes = [];
-    appState.tags = [];
-    appState.chores = [];
-    appState.weeklyChoreRows = [];
-    appState.weeklyMeals = [];
-    appState.familyCalendarItems = [];
-    appState.members = [];
-    localStorage.removeItem("familyId");
-    clearFamilyListeners();
+  let familyId = appState.currentUser.familyId || "";
+  if (!familyId) {
+    const existingFamily = await findRecoverableFamilyForUser(
+      uid,
+      appState.currentUser.username || fallbackUser.username
+    );
+    if (existingFamily) {
+      familyId = existingFamily.id;
+      await updateDoc(userRef, {
+        familyId,
+        updatedAt: serverTimestamp(),
+      });
+      await ensureFamilyIncludesUser(familyId, uid);
+      appState.currentUser.familyId = familyId;
+    }
   }
+
+  if (familyId) {
+    localStorage.setItem("familyId", familyId);
+    await loadFamilyImmediately(familyId);
+    attachFamilyListeners(familyId);
+    return;
+  }
+
+  clearActiveFamilyState();
 }
 
 function getFallbackUserFromAuth(authUser) {
@@ -3527,6 +3555,80 @@ function getFallbackUserFromAuth(authUser) {
     username,
     familyId: null,
   };
+}
+
+async function findRecoverableFamilyForUser(userId, username) {
+  const matchingUser = await findUserProfileByUsername(username);
+  return (
+    (matchingUser?.familyId ? { id: matchingUser.familyId } : null) ||
+    (matchingUser?.id ? await findFamilyForUser(matchingUser.id) : null) ||
+    (await findFamilyForUser(userId)) ||
+    (await findOnlyFamily())
+  );
+}
+
+async function findUserProfileByUsername(username) {
+  const normalized = (username || "").toString().trim().toLowerCase();
+  if (!normalized) return null;
+  const usersSnap = await getDocs(query(collection(db, "users"), where("username", "==", normalized)));
+  if (usersSnap.empty) return null;
+  const withFamily = usersSnap.docs.find((userDoc) => !!userDoc.data().familyId);
+  const userDoc = withFamily || usersSnap.docs[0];
+  return { id: userDoc.id, ...userDoc.data() };
+}
+
+async function findFamilyForUser(userId) {
+  if (!userId) return null;
+  const familiesSnap = await getDocs(collection(db, "families"));
+  const familySnap = familiesSnap.docs.find((familyDoc) => {
+    const members = familyDoc.data().members || [];
+    return Array.isArray(members) && members.includes(userId);
+  });
+  if (!familySnap) return null;
+  return { id: familySnap.id, ...familySnap.data() };
+}
+
+async function findOnlyFamily() {
+  const familiesSnap = await getDocs(collection(db, "families"));
+  if (familiesSnap.docs.length !== 1) return null;
+  const familySnap = familiesSnap.docs[0];
+  return { id: familySnap.id, ...familySnap.data() };
+}
+
+async function ensureFamilyIncludesUser(familyId, userId) {
+  if (!familyId || !userId) return;
+  const familyRef = doc(db, "families", familyId);
+  const familySnap = await getDoc(familyRef);
+  if (!familySnap.exists()) return;
+  const members = familySnap.data().members || [];
+  if (Array.isArray(members) && members.includes(userId)) return;
+  await updateDoc(familyRef, {
+    members: arrayUnion(userId),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+async function loadFamilyImmediately(familyId) {
+  const familySnap = await getDoc(doc(db, "families", familyId));
+  if (!familySnap.exists()) {
+    clearActiveFamilyState();
+    return;
+  }
+  appState.currentFamily = { id: familySnap.id, ...familySnap.data() };
+  await loadFamilyMembers(appState.currentFamily.members || []);
+}
+
+function clearActiveFamilyState() {
+  appState.currentFamily = null;
+  appState.recipes = [];
+  appState.tags = [];
+  appState.chores = [];
+  appState.weeklyChoreRows = [];
+  appState.weeklyMeals = [];
+  appState.familyCalendarItems = [];
+  appState.members = [];
+  localStorage.removeItem("familyId");
+  clearFamilyListeners();
 }
 
 async function attachFamilyListeners(familyId) {
