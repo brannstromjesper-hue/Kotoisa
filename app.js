@@ -3475,36 +3475,54 @@ async function handleEditChore(chore) {
 }
 
 async function loadUserProfile(authUser = null) {
+  const uid = appState.currentUserId;
   const userRef = doc(db, "users", appState.currentUserId);
   const snap = await getDoc(userRef);
   if (!snap.exists()) {
     if (profileSetupInProgress) return;
     const fallbackUser = getFallbackUserFromAuth(authUser);
     appState.currentUser = fallbackUser;
-    appState.currentFamily = null;
-    clearFamilyListeners();
+    const existingFamily = await findFamilyForUser(uid);
+    if (existingFamily) {
+      await updateDocOrSet(userRef, {
+        ...fallbackUser,
+        familyId: existingFamily.id,
+        updatedAt: serverTimestamp(),
+      });
+      appState.currentUser = { ...fallbackUser, familyId: existingFamily.id };
+      await loadFamilyImmediately(existingFamily.id);
+      attachFamilyListeners(existingFamily.id);
+      return;
+    }
+    clearActiveFamilyState();
     authMessage.textContent =
-      "Kirjautuminen onnistui, mutta käyttäjäprofiilia ei löytynyt. Luo perhe tai liity perheeseen jatkaaksesi.";
+      "Kirjautuminen onnistui, mutta käyttäjää ei ole liitetty perheeseen. Luo perhe tai liity perheeseen jatkaaksesi.";
     return;
   }
 
   appState.currentUser = { id: snap.id, ...snap.data() };
 
-  if (appState.currentUser.familyId) {
-    localStorage.setItem("familyId", appState.currentUser.familyId);
-    await attachFamilyListeners(appState.currentUser.familyId);
-  } else {
-    appState.currentFamily = null;
-    appState.recipes = [];
-    appState.tags = [];
-    appState.chores = [];
-    appState.weeklyChoreRows = [];
-    appState.weeklyMeals = [];
-    appState.familyCalendarItems = [];
-    appState.members = [];
-    localStorage.removeItem("familyId");
-    clearFamilyListeners();
+  let familyId = appState.currentUser.familyId || "";
+  if (!familyId) {
+    const existingFamily = await findFamilyForUser(uid);
+    if (existingFamily) {
+      familyId = existingFamily.id;
+      await updateDoc(userRef, {
+        familyId,
+        updatedAt: serverTimestamp(),
+      });
+      appState.currentUser.familyId = familyId;
+    }
   }
+
+  if (familyId) {
+    localStorage.setItem("familyId", familyId);
+    await loadFamilyImmediately(familyId);
+    attachFamilyListeners(familyId);
+    return;
+  }
+
+  clearActiveFamilyState();
 }
 
 function getFallbackUserFromAuth(authUser) {
@@ -3521,6 +3539,40 @@ function getFallbackUserFromAuth(authUser) {
     username,
     familyId: null,
   };
+}
+
+async function findFamilyForUser(userId) {
+  if (!userId) return null;
+  const familiesSnap = await getDocs(collection(db, "families"));
+  const familySnap = familiesSnap.docs.find((familyDoc) => {
+    const members = familyDoc.data().members || [];
+    return Array.isArray(members) && members.includes(userId);
+  });
+  if (!familySnap) return null;
+  return { id: familySnap.id, ...familySnap.data() };
+}
+
+async function loadFamilyImmediately(familyId) {
+  const familySnap = await getDoc(doc(db, "families", familyId));
+  if (!familySnap.exists()) {
+    clearActiveFamilyState();
+    return;
+  }
+  appState.currentFamily = { id: familySnap.id, ...familySnap.data() };
+  await loadFamilyMembers(appState.currentFamily.members || []);
+}
+
+function clearActiveFamilyState() {
+  appState.currentFamily = null;
+  appState.recipes = [];
+  appState.tags = [];
+  appState.chores = [];
+  appState.weeklyChoreRows = [];
+  appState.weeklyMeals = [];
+  appState.familyCalendarItems = [];
+  appState.members = [];
+  localStorage.removeItem("familyId");
+  clearFamilyListeners();
 }
 
 async function attachFamilyListeners(familyId) {
